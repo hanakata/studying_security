@@ -1,0 +1,10 @@
+第2章　実習環境のセットアップ
+実習環境は用意されているVMを利用（Virtual Boxで動作）
+利用するブラウザはFireFOX
+
+Owasp zap利用
+
+FireFoxの拡張としてFoxyProxy-Standardを追加
+→用意された設定ファイルをインポート
+
+本を見ながらで問題なくセットアップ完了
