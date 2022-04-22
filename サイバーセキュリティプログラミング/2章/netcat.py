@@ -1,4 +1,5 @@
 import argparse
+from email import message
 import locale
 import os
 import socket
@@ -7,13 +8,14 @@ import subprocess
 import sys
 import textwrap
 import threading
+from urllib import response
 
-def execute():
+def execute(cmd):
     cmd = cmd.strip()
     if not cmd:
         return
     # os.name = "nt"はWindowsかどうかの判断。Windows上で実行する場合、shellをTrueにすることでDirとかのコマンドが使える
-    if os.name = "nt":
+    if os.name == "nt":
         shell = True
     else:
         shell = False
@@ -84,6 +86,44 @@ class NetCat:
             client_thread = threading.Thread(target=self.handle,args=(client_socket,))
             client_thread.start()
 
+    def handle(self, client_socket):
+        # コマンド実行すべき場合、execute関数にコマンドを渡しその出力をソケットに返す
+        if self.args.execute:
+            output = execute(self.args.execute)
+            client_socket.send(output.encode())
+        # ファイルをアップロードする場合、ソケットでファイルデータを受け取る繰り返し処理を開始しデータを受信し続ける間はずっと受け取る
+        # 受信したデータを指定されたファイルを書き込む
+        elif self.args.upload:
+            file_buffer = 'b'
+            while True:
+                data= client_socket.recv(4096)
+                if data:
+                    file_buffer += data
+                else:
+                    break
+            with open(self.args.upload, 'wb') as f:
+                f.write(file_buffer)
+            message = f'Saved file {self.args.upload}'
+            client_socket.send(message.encode())
+        # シェルを起動する場合は繰り返し処理を開始し接続元にプロンプトを表示しコマンド文字列を受け取るのを待つ
+        # execute関数を使ってコマンドを実行しコマンドの実行結果を接続元に返す
+        elif self.args.command:
+            cmd_buffer = b''
+            while True:
+                try:
+                    client_socket.send(b'<BHP:#> ')
+                    while '\n' not in cmd_buffer.decode():
+                        cmd_buffer += client_socket.recv(64)
+                    response = execute(cmd_buffer.decode())
+
+                    if response:
+                        client_socket.send(response.encode())
+                    cmd_buffer = b''
+                except Exception as e:
+                    print(f'server killed {e}')
+                    self.socket.close()
+                    sys.exit()
+
 if __name__ == '__main__':
     #　標準ライブラリからargparseを呼び出しコマンドラインインタフェースを作成
     parser = argparse.ArgumentParser(
@@ -99,7 +139,7 @@ if __name__ == '__main__':
             # コマンドの実行
             netcat.py -t 192.168.1.108 -p 5555 -c -l -e=\"cat /etc/passwd\"
             # 通信先サーバの135番ポートに文字列を送信
-            netcat.py -t 192.168.1.108 -p 5555 -c -l -e=\"cat /etc/passwd\"
+            echo 'ABC' | ./netcat.py -t 192.168.1.108 -p 135
             # サーバに接続
             netcat.py -t 192.168.1.108 -p 5555
         ''')
@@ -109,7 +149,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--execute',help='指定コマンドの実行')
     parser.add_argument('-l', '--listen', action='store_true',help='通信待受モード')
     parser.add_argument('-p', '--port', type=int,default=5555,help='ポート番号の指定')
-    parser.add_argument('-t', '--target', default=192.168.1.203,help='IPアドレスの指定')
+    parser.add_argument('-t', '--target', default='192.168.1.203',help='IPアドレスの指定')
     parser.add_argument('-u', '--upload', help='ファイルのアップロード')
     # リスナーとして設定している場合空のバッファ文字列でNetCatオブジェクトを起動する
     # それ以外はstdinからバッファの内容を送ってからNetCatを起動する
